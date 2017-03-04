@@ -17,7 +17,7 @@ public:
     global_pub = n.advertise<geometry_msgs::Pose>("odometry/global_pose", 50);
     C_D_pub    = n.advertise<std_msgs::String>("odometry/C_D", 50);
     vel_sub    = n.subscribe("/cmd_vel", 50, &Odometry::callback, this);
-    
+
     current_time = ros::Time::now();
     last_time = current_time;
 
@@ -53,30 +53,39 @@ public:
       double delta_t = (current_time - last_time).toSec();
 
       //### Placeholder Variable Initializations ###
-      // This is not where these variables should live.
+      // partim del punt 0,0 en el pla i un angle de 0º
       double delta_x  = 0;
       double delta_y  = 0;
       double delta_th = 0;
-      double Delta_x  = 0;
-      double Delta_y  = 0;
-      double Delta_th = 0;
-      C_D = Eigen::Matrix3d::Zero(3, 3);
-      double x  = 0;
-      double y  = 0;
-      double th = 0;
-      
       //### Time Integration of Velocity Data ###
-     
+      // Increment de x be donat per multiplicar la velocitat de x per el delta t, i això per y i per theta
+      Delta_x=vx*delta_t;
+      Delta_y=vy*delta_t;
+      Delta_th=vth*delta_t;
       //### Time Integration of Velocity Data - Jacobian stage ###
-      
+      // la Jacobiana de delta t es una matriu d'identitat de 3x3.
+      J_delta_t= Eigen::Matrix3d::Identity(3,3);
       //### Integrate Factor ###
-    
-      //### Integrate Factor - Jacobian Stage ###
-      
+      // apliquem la fòrmula de la covariança: jacovianax la caovariança del twist x la jacoviana transposada
+      C_d=J_delta_t*C_v*J_delta_t.transpose()*delta_t;
+      //### Integrate Factor pose increment
+      Delta_x = Delta_x + delta_x * cos(Delta_th) - delta_y * sin(Delta_th);
+      Delta_y = Delta_y + delta_x * sin(Delta_th) + delta_y * cos(Delta_th);
+      Delta_th = Delta_th + delta_th;
+      //Jacobians of the equations above, repect to D ###
+      J_D_D << 	1,	0,	-delta_x * sin(Delta_th) - delta_y * cos(Delta_th),
+                0,	1,	 delta_x * cos(Delta_th) - delta_y * sin(Delta_th),
+                0,  0,   1;
+      //Jacobians of the equations above, repect to d ###
+      J_D_d <<	cos(Delta_th),	-sin(Delta_th),	0,
+                sin(Delta_th),	cos(Delta_th),	0,
+                0, 0, 1;
       //### Integrate Factor - Covariance stage ###
-
+      C_D = J_D_D * C_D * J_D_D.transpose() + J_D_d * C_d * J_D_d.transpose();
       //### Integrate Global Pose ###
-
+      x = x + delta_x * cos(th) - delta_y * sin(th);
+      y = y + delta_x * sin(th) + delta_y * cos(th);
+      th = th + delta_th;
       //### Publish d, D and global poses, and covariance C_D ###
       delta_pub.publish(create_pose_msg(delta_x, delta_y, delta_th));
       Delta_pub.publish(create_pose_msg(Delta_x, Delta_y, Delta_th));
@@ -117,11 +126,11 @@ private:
   geometry_msgs::Pose create_pose_msg(double x, double y, double th) {
     geometry_msgs::Quaternion pose_quat = tf::createQuaternionMsgFromYaw(th);
     geometry_msgs::Pose pose;
-    
+
     pose.position.x  = x;
     pose.position.y  = y;
     pose.orientation = pose_quat;
-    
+
     return pose;
   }
 
@@ -132,10 +141,10 @@ private:
 	ss << m(i, j) << " ";
       }
     }
-    
+
     std_msgs::String covar;
     covar.data = ss.str().substr(0, ss.str().size()-1);
-    
+
     return covar;
   }
 
